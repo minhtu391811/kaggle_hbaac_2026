@@ -23,8 +23,9 @@ env/
 # Scratch & Temporary files
 scratch/
 
-# Obsolete / Old baseline notebooks (keeping v4 & v5)
+# Obsolete / Old baseline notebooks (keeping v4 & v4.5 only)
 submission_v1.ipynb
+submission_v3.ipynb
 submission_v5.ipynb
 
 # Documentation for debugging

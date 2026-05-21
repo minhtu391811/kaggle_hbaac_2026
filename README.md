@@ -1,98 +1,105 @@
 # Kaggle HBAAC 2026 — Vietnamese Auto Parts Demand Forecasting
 
-This repository contains the complete solution for the **Kaggle HBAAC 2026 Demand Forecasting** competition.
+This repository contains the top-performing solutions for the **Kaggle HBAAC 2026 Demand Forecasting** competition. 
 
-The objective is to predict the daily sales quantity for the next 56 days across roughly **15,972 SKUs** of a Vietnamese Auto Parts distributor, based on ~5 years of transaction history (2020-11-17 to 2025-09-05).
-
-The competition evaluation metric is **WRMSSE** (Weighted Root Mean Squared Scaled Error), where weights are determined by SKU total profit in the training set.
+The goal of this competition is to predict the daily sales quantity for the next 56 days across roughly **15,972 SKUs** of a Vietnamese Auto Parts distributor, based on ~5 years of transaction history (2020-11-17 to 2025-09-05). Predictions are evaluated using the **Weighted Root Mean Squared Scaled Error (WRMSSE)** metric.
 
 ---
 
-## Solution Architecture Overview
+## 📂 Repository Contents
 
-Our solution utilizes a **single Global LightGBM model framework** that learns cross-SKU interactions and demand dynamics simultaneously. This avoids the overhead of training 16,000 separate models and handles sparse demand effectively.
+This repository is configured to keep only the two final production-ready notebooks tracked in Git:
 
-We developed two major iterations (v4 and v5) building on top of our baseline:
-
-### 1. `submission_v4.ipynb` (WRMSSE: ~0.5468)
-*   **Target Transformation:** Trained on the square root of the sales quantity to stabilize Poisson-like count variance.
-*   **Holiday Proximity Encodings:** Coverage of Vietnamese public holidays, including a dynamically calculated 9-day window for the Lunar New Year (Tet) season, days to/from Tet, and pre/post holiday flags.
-*   **Leak-Free Time Series Features:** Lags starting at a minimum of 56 days (e.g., lag 56, 63, 91, 364) and rolling features derived from shifted series to prevent future leakage.
-*   **Profit-Aware Sample Weights:** Weighted training samples using $\frac{\text{profit}^{0.7}}{\sqrt{\text{naive\_denom}}}$, capping outliers to focus learning on high-profit items without ignoring low-volume SKUs.
-*   **Tiered Post-Processing:** Static multipliers (1.20, 1.10, 1.05) applied to validation forecasts according to profit-weight tiers to counter the regression model's tendency to underpredict high-volume peaks.
-
-### 2. `submission_v5.ipynb` (Ensemble & Advanced Features)
-*   **Feature Pruning:** Removed 8+ features with zero or near-zero feature importance in v4 (e.g., redundant lags, rolling standard deviations, SKU coefficient of variation).
-*   **Expanded Cross Features:** Added interactions like `sku_week_mean`, `sku_quarter_mean`, and `sku_dow_ewm` (exponentially weighted day-of-week demand) to capture shifting weekday demand patterns.
-*   **Ratio & Trend Features:** Integrated relative momentum indicators (`ewm_ratio_14_56`, `ewm_ratio_28_91`, `lag56_vs_ewm56`) and trend trackers (`trend_t` continuous timeline day, `sku_recent_mean_90d`, and `sku_growth_rate`).
-*   **Burst & Frequency Features:** Added `roll_max_56` and `roll_nonzero_28` to signal active SKU demand bursts.
-*   **Ensemble Blend:** A 65/35 blend of:
-    1.  **SQRT Regression LightGBM** (L2 loss on square-root targets).
-    2.  **Tweedie LightGBM** (Tweedie loss on raw quantity, variance power = 1.5) to naturally model zero-inflated, heavy-tailed count distributions.
-*   **Data-Driven Calibration:** Dynamically calculates scaling factors per profit tier from validation residuals (actual mean / predicted mean) rather than using hardcoded scaling weights.
+*   [submission_v4.ipynb](file:///d:/Repositories/kaggle_hbaac_2026/submission_v4.ipynb): Generates our baseline optimized LightGBM model forecasts, saving output to `/kaggle/working/submission_v4.csv` (**WRMSSE: ~0.5468**).
+*   [submission_v4.5.ipynb](file:///d:/Repositories/kaggle_hbaac_2026/submission_v4.5.ipynb): Applies advanced data-driven post-processing (stale SKU zeroing) on top of the v4 model forecasts to avoid over-predicting on inactive items, saving output to `/kaggle/working/submission_v4.5.csv` (**WRMSSE: ~0.5402**).
 
 ---
 
-## Pipeline & Implementation Steps
+## 🚀 Reproducibility Guide (How to Run)
+
+### Option A: Running on Kaggle (Recommended)
+
+To run the notebooks inside the Kaggle environment with no manual environment setup:
+
+1.  **Create a New Notebook** in the Kaggle competition page for **HBAAC Round 2**.
+2.  **Upload the Notebook**: File → Import Notebook → Upload `submission_v4.ipynb` or `submission_v4.5.ipynb`.
+3.  **Verify Data Sources**: The competition dataset should automatically be mapped to `/kaggle/input/competitions/hbaac-round2`.
+4.  **Run All Cells**: The notebook will execute the training and inference pipeline, outputting the respective submission CSV to `/kaggle/working/`.
+
+---
+
+### Option B: Running Locally
+
+To run the notebooks on your local machine:
+
+1.  **Clone the Repository** and ensure you have the required dependencies installed (see [Dependencies](#-python-dependencies) below).
+2.  **Download the Dataset**: Download `train.csv` and `sample_submission.csv` from Kaggle and place them inside a data directory.
+3.  **Adjust Paths**: Open the second cell of the notebook and adjust the `INPUT_DIR` and `OUTPUT_DIR` paths to match your local paths. For example:
+    ```python
+    INPUT_DIR  = Path('path/to/your/local/data/directory')
+    OUTPUT_DIR = Path('path/to/save/outputs')
+    ```
+4.  **Run all cells** sequentially using a Jupyter Notebook/Lab server or VS Code.
+
+---
+
+## 🛠️ Solution Architecture & Pipeline
 
 ```mermaid
 graph TD
     A[Raw Data train.csv] --> B[Parse VND Decimals & Aggregate Returns]
     B --> C[Compute SKU Profit Weights]
-    C --> D[Reindex to Full Daily Calendar]
-    D --> E[Feature Engineering: Lags, EWMs, Holiday Flags]
+    C --> D[Reindex to Full Daily Calendar Grid]
+    D --> E[Feature Engineering: Holiday Flags, Lags & EWMs]
     E --> F[Train/Val Time Split]
-    F --> G1[SQRT Regression LightGBM]
-    F --> G2[Tweedie LightGBM]
-    G1 --> H[65/35 Weighted Ensemble]
-    G2 --> H
-    H --> I[Post-Processing: Sparse Zeroing & Calibration]
-    I --> J[56-Day Day-by-Day Inference Loop]
-    J --> K[Submission File: submission_v5.csv]
+    F --> G[SQRT Regression LightGBM Training]
+    G --> H[56-Day Day-by-Day Inference Loop]
+    H --> I[Post-Processing Tiered Profit Scaling]
+    I --> J1[submission_v4.ipynb -> submission_v4.csv]
+    I --> J2[submission_v4.5.ipynb -> Stale SKU Filtering]
+    J2 --> K[submission_v4.5.csv]
 ```
 
-### 1. Preprocessing & Data Resampling
-*   **Returns Handling:** Transactions with negative quantity are aggregated by date and summed. Net daily demand is clipped at 0.
-*   **Calendar Expansion:** Reindexed the dataset using `pd.MultiIndex` to represent every SKU on every single day from 2020-11-17 to 2025-09-05. Days with no transaction default to `0` quantity.
-*   **Memory Optimization:** Downcasted numeric columns to `float32`, `int16`, and `int8`.
+### 1. Data Preprocessing & Grid Alignment
+*   **Returns Aggregation:** Negative quantities (customer returns) are aggregated and summed by day. The net daily quantity is then clipped at 0.
+*   **Grid Expansion:** We expand the sparse daily transaction grain to a complete dense calendar grid (`MultiIndex` of all SKUs × all dates from 2020-11-17 to 2025-09-05). Dates with no sales are filled with `0` quantity.
+*   **VND Parser:** Cleans Vietnamese decimal-comma strings in pricing (`UnitPrice`, `Unit Cost`) and converts them into floats.
 
-### 2. Time-Based Validation Split
-Our validation strategy mirrors the competition horizon:
-*   **Training Set:** All data before `2025-07-12`.
-*   **Validation Set:** `2025-07-12` to `2025-09-05` (56 days matching the forecast horizon).
+### 2. Feature Engineering
+We construct robust features specifically designed for retail demand forecasting:
+*   **Vietnamese Holiday Windows:** Extended indicator flags covering public holidays (New Year, Kings' Commemoration, Reunification Day, Labor Day, National Day).
+*   **Tet (Lunar New Year) Encodings:** Dynamic 9-day holiday window calculations mapping the moving date of Tet, days to next Tet, days since last Tet, and a Tet season active flag.
+*   **Leak-Free Time Series Features:** Lags starting at a minimum of 56 days (matching our forecast horizon) to avoid data leakage (lags `56`, `63`, `70`, `84`, `91`, `357`, `364`, `371`).
+*   **Rolling Aggregates & EWM:** Rolling mean, standard deviation, and Exponential Weighted Mean (spans `28`, `56`) to capture recency-biased trends.
+*   **Croston-like Streak:** Active track of consecutive zero-sales days from the lag-56 perspective.
 
-### 3. Day-by-Day Inference Loop
-To prevent memory OOM errors, predictions are generated day-by-day over the 56-day forecast horizon. A pre-computed `hist_pivot` matrix is updated after each day's prediction step to serve as input for subsequent lag calculations.
+### 3. Model Training
+*   **Target Transformation:** We train the model on the square root of the sales quantity ($\sqrt{\text{Quantity}}$) to stabilize variance and prevent extremely high spikes from dominating the loss. Predictions are squared back to the original scale during inference.
+*   **Profit-Aware Sample Weights:** Training rows are weighted using $\frac{\text{profit}^{0.7}}{\sqrt{\text{naive\_denom}}}$, focusing training on highly profitable items while keeping representation for low-volume SKUs.
+*   **Model Capacity:** A global LightGBM regression model trained with `num_leaves=255` and L2 regularization to capture complex interactive seasonal patterns.
+
+### 4. Post-Processing & Tuning (v4 vs v4.5)
+*   **Profit-Tier Scaling (v4 & v4.5):** To offset the regression model's tendency to underpredict high-volume sales peaks, we apply static scaling multipliers to the forecast based on SKU profit-weight quantiles:
+    *   **Tier 1 (Top 5% profit):** Multiplied by `1.20`
+    *   **Tier 2 (Top 5%-20% profit):** Multiplied by `1.10`
+    *   **Tier 3 (Top 20%-50% profit):** Multiplied by `1.05`
+*   **Stale SKU Filtering (v4.5 only):** 
+    > [!IMPORTANT]
+    > Thousands of SKUs in the dataset represent discontinued or stale inventory. To protect the RMSSE denominator, `submission_v4.5.ipynb` zeroes out forecasts for SKUs with high inactivity probabilities:
+    > - SKUs with no sales in the last **365 days**.
+    > - SKUs with no sales in the last **180 days** that also have low profit weights (`< 0.001`).
+    > 
+    > This reduces predictions on 16,978 stale rows, improving the validation WRMSSE score from `0.5468` to `0.5402`.
 
 ---
 
-## Repository Structure
+## 📦 Python Dependencies
 
+The notebooks are designed to run in standard Kaggle Python environments. If running locally, please ensure the following libraries are installed:
+
+```bash
+pip install pandas numpy lightgbm scikit-learn matplotlib
 ```
-kaggle_hbaac_2026/
-├── .gitignore                 # Excludes data files, csvs, pngs, and temp files
-├── GEMINI.md                  # Competition specifications & evaluation rules
-├── README.md                  # This documentation file
-├── submission_v4.ipynb        # Cleaned v4 notebook (LightGBM Single Model)
-├── submission_v5.ipynb        # Cleaned v5 notebook (Ensemble, final submission)
-└── feature_importance_v4.png   # LightGBM v4 top feature importance plot
-```
-
----
-
-## How to Run on Kaggle
-
-1.  Create a new notebook in the **HBAAC Round 2** Kaggle competition.
-2.  Upload `submission_v5.ipynb` to Kaggle.
-3.  Ensure the input directory is mapped to: `/kaggle/input/competitions/hbaac-round2`.
-4.  Run all cells. The notebook will save `submission_v5.csv` to `/kaggle/working/submission_v5.csv`.
-5.  Submit the CSV file to the leaderboard.
-
----
-
-## Python Dependencies
-
-The notebooks are designed to run in standard Kaggle Python environments. Minimum versions required:
 
 *   `pandas >= 1.5.0`
 *   `numpy >= 1.23.0`
