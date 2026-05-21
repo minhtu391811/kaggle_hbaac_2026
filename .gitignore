@@ -1,0 +1,32 @@
+# Kaggle HBAAC 2026 - Demand Forecasting Gitignore
+
+# Data Files (large files, should not be pushed to GitHub)
+train.csv
+sample_submission.csv
+
+# Outputs & Submissions
+submissions/
+*.csv
+
+# Generated Images (Feature Importance)
+*.png
+
+# Python & Jupyter Caches
+__pycache__/
+.ipynb_checkpoints/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# Scratch & Temporary files
+scratch/
+
+# Obsolete / Old baseline notebooks (keeping v4 & v5)
+submission_v1.ipynb
+submission_v3.ipynb
+
+# Documentation for debugging
+GEMINI.md
+prompt.md
